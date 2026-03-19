@@ -23,7 +23,7 @@ This repository is for recruiters, collaborators, and developers who want a comp
 
 ```powershell
 python -m venv .venv
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ## Run
