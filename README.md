@@ -22,16 +22,20 @@ This repository is for recruiters, collaborators, and developers who want a comp
 ## Install
 
 ```powershell
-cd C:\Users\GILIANFG\Documents\PORTFOLIOS\PRICES_B3
-python -m pip install -r .\requirements.txt
+python -m venv .venv
+pip install -r requirements.txt
 ```
 
 ## Run
 
 ```powershell
-cd C:\Users\GILIANFG\Documents\PORTFOLIOS\PRICES_B3
-python -m py_compile .\ingestor_prices_b3.py
-python .\ingestor_prices_b3.py
+python ingestor_prices_b3.py
+```
+
+## Smoke Test
+
+```powershell
+python -m py_compile ingestor_prices_b3.py
 ```
 
 ## Example Output
