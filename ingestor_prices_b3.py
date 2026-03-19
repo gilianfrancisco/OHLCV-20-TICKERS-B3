@@ -34,6 +34,8 @@ TICKERS = [
 START_DATE = date(2000, 1, 1)
 CHUNK_YEARS = 2
 THROTTLE_SECONDS = 0.5
+RECOVERY_ROUNDS = 5
+RECOVERY_DELAY_SECONDS = 2.0
 DB_PATH = Path(__file__).resolve().with_name("prices_b3.db")
 
 logging.basicConfig(
@@ -138,6 +140,7 @@ def save_rows(connection, rows):
 def main():
     connection = connect_db()
     today = date.today()
+    failed_windows = []
     logger.info("Starting ingestion | tickers=%s | database=%s", len(TICKERS), DB_PATH.name)
 
     try:
@@ -159,11 +162,12 @@ def main():
                     rows = download_rows(ticker, chunk_start, chunk_end)
                 except Exception:
                     logger.exception(
-                        "%s | failed window=%s..%s",
+                        "%s | failed window=%s..%s | queued_for_recovery",
                         ticker,
                         chunk_start,
                         chunk_end_inclusive,
                     )
+                    failed_windows.append((ticker, chunk_start, chunk_end))
                     time.sleep(THROTTLE_SECONDS)
                     continue
 
@@ -182,7 +186,72 @@ def main():
 
                 time.sleep(THROTTLE_SECONDS)
 
-            logger.info("%s | finished | inserted=%s", ticker, inserted_rows)
+            logger.info("%s | first_pass_finished | inserted=%s", ticker, inserted_rows)
+
+        for recovery_round in range(1, RECOVERY_ROUNDS + 1):
+            if not failed_windows:
+                break
+
+            logger.info(
+                "Starting recovery round %s/%s | pending_windows=%s",
+                recovery_round,
+                RECOVERY_ROUNDS,
+                len(failed_windows),
+            )
+
+            pending_windows = failed_windows
+            failed_windows = []
+
+            for ticker, chunk_start, chunk_end in pending_windows:
+                chunk_end_inclusive = chunk_end - timedelta(days=1)
+                logger.info(
+                    "%s | recovery_round=%s | window=%s..%s",
+                    ticker,
+                    recovery_round,
+                    chunk_start,
+                    chunk_end_inclusive,
+                )
+
+                try:
+                    rows = download_rows(ticker, chunk_start, chunk_end)
+                except Exception:
+                    logger.exception(
+                        "%s | recovery_round=%s | failed window=%s..%s",
+                        ticker,
+                        recovery_round,
+                        chunk_start,
+                        chunk_end_inclusive,
+                    )
+                    failed_windows.append((ticker, chunk_start, chunk_end))
+                    continue
+
+                rows_inserted = 0
+                if rows:
+                    rows_inserted = save_rows(connection, rows)
+
+                logger.info(
+                    "%s | recovery_round=%s | window=%s..%s | inserted=%s",
+                    ticker,
+                    recovery_round,
+                    chunk_start,
+                    chunk_end_inclusive,
+                    rows_inserted,
+                )
+                time.sleep(THROTTLE_SECONDS)
+
+            if failed_windows and recovery_round < RECOVERY_ROUNDS:
+                logger.warning(
+                    "Recovery round %s finished | remaining_windows=%s | retry_in=%ss",
+                    recovery_round,
+                    len(failed_windows),
+                    RECOVERY_DELAY_SECONDS,
+                )
+                time.sleep(RECOVERY_DELAY_SECONDS)
+
+        if failed_windows:
+            logger.warning("Recovery finished with %s failed windows still pending", len(failed_windows))
+        else:
+            logger.info("Recovery finished with no pending failed windows")
     finally:
         connection.close()
         logger.info("Finished ingestion")
