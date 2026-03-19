@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import time
 from datetime import date
@@ -34,6 +35,13 @@ START_DATE = date(2000, 1, 1)
 CHUNK_YEARS = 2
 THROTTLE_SECONDS = 0.5
 DB_PATH = Path(__file__).resolve().with_name("prices_b3.db")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
 def connect_db():
@@ -114,6 +122,7 @@ def download_rows(ticker, start_date, end_date):
 
 
 def save_rows(connection, rows):
+    changes_before = connection.total_changes
     connection.executemany(
         """
         INSERT OR REPLACE INTO daily_prices
@@ -123,44 +132,60 @@ def save_rows(connection, rows):
         rows,
     )
     connection.commit()
+    return connection.total_changes - changes_before
 
 
 def main():
     connection = connect_db()
     today = date.today()
+    logger.info("Starting ingestion | tickers=%s | database=%s", len(TICKERS), DB_PATH.name)
 
     try:
         for ticker in TICKERS:
             last_date = get_last_date(connection, ticker)
             start_date = last_date + timedelta(days=1) if last_date else START_DATE
+            logger.info("%s | start=%s", ticker, start_date)
 
             if start_date >= today:
-                print(f"{ticker}: up to date")
+                logger.info("%s | up to date", ticker)
                 continue
 
             inserted_rows = 0
 
             for chunk_start, chunk_end in two_year_windows(start_date, today):
+                chunk_end_inclusive = chunk_end - timedelta(days=1)
+                logger.info("%s | window=%s..%s", ticker, chunk_start, chunk_end_inclusive)
                 try:
                     rows = download_rows(ticker, chunk_start, chunk_end)
-                except Exception as exc:
-                    print(
-                        f"{ticker}: failed for {chunk_start} to "
-                        f"{chunk_end - timedelta(days=1)} - {exc}"
+                except Exception:
+                    logger.exception(
+                        "%s | failed window=%s..%s",
+                        ticker,
+                        chunk_start,
+                        chunk_end_inclusive,
                     )
                     time.sleep(THROTTLE_SECONDS)
                     continue
 
+                rows_inserted = 0
                 if rows:
-                    changes_before = connection.total_changes
-                    save_rows(connection, rows)
-                    inserted_rows += connection.total_changes - changes_before
+                    rows_inserted = save_rows(connection, rows)
+                    inserted_rows += rows_inserted
+
+                logger.info(
+                    "%s | window=%s..%s | inserted=%s",
+                    ticker,
+                    chunk_start,
+                    chunk_end_inclusive,
+                    rows_inserted,
+                )
 
                 time.sleep(THROTTLE_SECONDS)
 
-            print(f"{ticker}: +{inserted_rows} rows")
+            logger.info("%s | finished | inserted=%s", ticker, inserted_rows)
     finally:
         connection.close()
+        logger.info("Finished ingestion")
 
 
 if __name__ == "__main__":
