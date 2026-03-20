@@ -18,6 +18,7 @@ This repository is for recruiters, collaborators, and developers who want a comp
 - `ingestor_prices_b3.py`: main script.
 - `prices_b3.db`: generated locally when the script runs.
 - `requirements.txt`: pinned runtime dependencies.
+- `.env.example`: local configuration template.
 
 ## Install
 
@@ -25,6 +26,13 @@ This repository is for recruiters, collaborators, and developers who want a comp
 python -m venv .venv
 python -m pip install -r requirements.txt
 ```
+
+## Configuration
+
+- The script reads configuration from environment variables.
+- `PRICES_B3_DB_PATH` optionally overrides the SQLite database location.
+- `.env.example` documents the supported local configuration.
+- No secrets in repo: do not commit `.env`, tokens, connection strings, or personal paths.
 
 ## Run
 
@@ -51,7 +59,7 @@ ITUB4: +6198 rows
 - Data source: `yfinance`.
 - Dependencies are pinned in `requirements.txt`, and GitHub Dependabot is configured for automated dependency alerts.
 - The ticker universe is intentionally fixed in the script.
-- The local database file is recreated automatically if it does not exist.
+- The local database file is recreated automatically if it does not exist, and its location can be overridden with `PRICES_B3_DB_PATH`.
 - This is not a production trading system and does not include tests beyond a smoke validation with `python -m py_compile`.
 
 ## Contribution / Project Boundary

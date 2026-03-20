@@ -1,4 +1,5 @@
 import logging
+import os
 import sqlite3
 import time
 from datetime import date
@@ -36,7 +37,7 @@ CHUNK_YEARS = 2
 THROTTLE_SECONDS = 0.5
 RECOVERY_ROUNDS = 5
 RECOVERY_DELAY_SECONDS = 2.0
-DB_PATH = Path(__file__).resolve().with_name("prices_b3.db")
+DEFAULT_DB_PATH = Path(__file__).resolve().with_name("prices_b3.db")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,8 +47,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_db_path():
+    raw_path = os.getenv("PRICES_B3_DB_PATH")
+    if raw_path:
+        return Path(raw_path).expanduser().resolve()
+    return DEFAULT_DB_PATH
+
+
 def connect_db():
-    connection = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(db_path)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS daily_prices (
@@ -138,10 +148,11 @@ def save_rows(connection, rows):
 
 
 def main():
+    db_path = get_db_path()
     connection = connect_db()
     today = date.today()
     failed_windows = []
-    logger.info("Starting ingestion | tickers=%s | database=%s", len(TICKERS), DB_PATH.name)
+    logger.info("Starting ingestion | tickers=%s | database=%s", len(TICKERS), db_path)
 
     try:
         for ticker in TICKERS:
