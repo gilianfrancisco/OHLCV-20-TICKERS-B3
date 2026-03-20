@@ -49,6 +49,7 @@ ITUB4: +6198 rows
 ## Important Decisions And Limitations
 
 - Data source: `yfinance`.
+- Dependencies are pinned in `requirements.txt`, and GitHub Dependabot is configured for automated dependency alerts.
 - The ticker universe is intentionally fixed in the script.
 - The local database file is recreated automatically if it does not exist.
 - This is not a production trading system and does not include tests beyond a smoke validation with `python -m py_compile`.
