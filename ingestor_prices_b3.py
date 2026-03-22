@@ -54,8 +54,7 @@ def get_db_path():
     return DEFAULT_DB_PATH
 
 
-def connect_db():
-    db_path = get_db_path()
+def connect_db(db_path):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
     connection.execute(
@@ -147,9 +146,66 @@ def save_rows(connection, rows):
     return connection.total_changes - changes_before
 
 
+def process_window(connection, ticker, chunk_start, chunk_end, recovery_round=None):
+    chunk_end_inclusive = chunk_end - timedelta(days=1)
+
+    if recovery_round is None:
+        logger.info("%s | window=%s..%s", ticker, chunk_start, chunk_end_inclusive)
+    else:
+        logger.info(
+            "%s | recovery_round=%s | window=%s..%s",
+            ticker,
+            recovery_round,
+            chunk_start,
+            chunk_end_inclusive,
+        )
+
+    try:
+        rows = download_rows(ticker, chunk_start, chunk_end)
+    except Exception:
+        if recovery_round is None:
+            logger.exception(
+                "%s | failed window=%s..%s | queued_for_recovery",
+                ticker,
+                chunk_start,
+                chunk_end_inclusive,
+            )
+        else:
+            logger.exception(
+                "%s | recovery_round=%s | failed window=%s..%s",
+                ticker,
+                recovery_round,
+                chunk_start,
+                chunk_end_inclusive,
+            )
+        return None
+
+    rows_inserted = save_rows(connection, rows) if rows else 0
+
+    if recovery_round is None:
+        logger.info(
+            "%s | window=%s..%s | inserted=%s",
+            ticker,
+            chunk_start,
+            chunk_end_inclusive,
+            rows_inserted,
+        )
+    else:
+        logger.info(
+            "%s | recovery_round=%s | window=%s..%s | inserted=%s",
+            ticker,
+            recovery_round,
+            chunk_start,
+            chunk_end_inclusive,
+            rows_inserted,
+        )
+
+    return rows_inserted
+
+
 def main():
     db_path = get_db_path()
-    connection = connect_db()
+    connection = connect_db(db_path)
     today = date.today()
     failed_windows = []
     logger.info("Starting ingestion | tickers=%s | database=%s", len(TICKERS), db_path)
@@ -167,34 +223,13 @@ def main():
             inserted_rows = 0
 
             for chunk_start, chunk_end in two_year_windows(start_date, today):
-                chunk_end_inclusive = chunk_end - timedelta(days=1)
-                logger.info("%s | window=%s..%s", ticker, chunk_start, chunk_end_inclusive)
-                try:
-                    rows = download_rows(ticker, chunk_start, chunk_end)
-                except Exception:
-                    logger.exception(
-                        "%s | failed window=%s..%s | queued_for_recovery",
-                        ticker,
-                        chunk_start,
-                        chunk_end_inclusive,
-                    )
+                rows_inserted = process_window(connection, ticker, chunk_start, chunk_end)
+                if rows_inserted is None:
                     failed_windows.append((ticker, chunk_start, chunk_end))
                     time.sleep(THROTTLE_SECONDS)
                     continue
 
-                rows_inserted = 0
-                if rows:
-                    rows_inserted = save_rows(connection, rows)
-                    inserted_rows += rows_inserted
-
-                logger.info(
-                    "%s | window=%s..%s | inserted=%s",
-                    ticker,
-                    chunk_start,
-                    chunk_end_inclusive,
-                    rows_inserted,
-                )
-
+                inserted_rows += rows_inserted
                 time.sleep(THROTTLE_SECONDS)
 
             logger.info("%s | first_pass_finished | inserted=%s", ticker, inserted_rows)
@@ -214,40 +249,16 @@ def main():
             failed_windows = []
 
             for ticker, chunk_start, chunk_end in pending_windows:
-                chunk_end_inclusive = chunk_end - timedelta(days=1)
-                logger.info(
-                    "%s | recovery_round=%s | window=%s..%s",
+                rows_inserted = process_window(
+                    connection,
                     ticker,
-                    recovery_round,
                     chunk_start,
-                    chunk_end_inclusive,
+                    chunk_end,
+                    recovery_round=recovery_round,
                 )
-
-                try:
-                    rows = download_rows(ticker, chunk_start, chunk_end)
-                except Exception:
-                    logger.exception(
-                        "%s | recovery_round=%s | failed window=%s..%s",
-                        ticker,
-                        recovery_round,
-                        chunk_start,
-                        chunk_end_inclusive,
-                    )
+                if rows_inserted is None:
                     failed_windows.append((ticker, chunk_start, chunk_end))
                     continue
-
-                rows_inserted = 0
-                if rows:
-                    rows_inserted = save_rows(connection, rows)
-
-                logger.info(
-                    "%s | recovery_round=%s | window=%s..%s | inserted=%s",
-                    ticker,
-                    recovery_round,
-                    chunk_start,
-                    chunk_end_inclusive,
-                    rows_inserted,
-                )
                 time.sleep(THROTTLE_SECONDS)
 
             if failed_windows and recovery_round < RECOVERY_ROUNDS:
