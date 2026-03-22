@@ -19,6 +19,7 @@ This repository is for recruiters, collaborators, and developers who want a comp
 - `prices_b3.db`: generated locally when the script runs.
 - `requirements.txt`: pinned runtime dependencies.
 - `.env.example`: local configuration template.
+- `SYSTEM_STATE.md`: dated log of small repository changes.
 
 ## Install
 
@@ -31,6 +32,7 @@ python -m pip install -r requirements.txt
 
 - The script reads configuration from environment variables.
 - `PRICES_B3_DB_PATH` optionally overrides the SQLite database location.
+- PostgreSQL credentials, when needed by future migration/loading flows, must come from `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`.
 - `.env.example` documents the supported local configuration.
 - No secrets in repo: do not commit `.env`, tokens, connection strings, or personal paths.
 
@@ -60,6 +62,8 @@ ITUB4: +6198 rows
 - Dependencies are pinned in `requirements.txt`, and GitHub Dependabot is configured for automated dependency alerts.
 - The ticker universe is intentionally fixed in the script.
 - The local database file is recreated automatically if it does not exist, and its location can be overridden with `PRICES_B3_DB_PATH`.
+- The local SQLite database keeps `trade_date` in ISO `YYYY-MM-DD` format.
+- Small repository changes are recorded in `SYSTEM_STATE.md`.
 - This is not a production trading system and does not include tests beyond a smoke validation with `python -m py_compile`.
 
 ## Contribution / Project Boundary

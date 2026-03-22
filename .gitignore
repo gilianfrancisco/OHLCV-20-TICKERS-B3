@@ -1,6 +1,9 @@
 .env
 .env.*
 !.env.example
+.envrc
+.pgpass
+*.pgpass
 __pycache__/
 *.py[cod]
 *.db
@@ -8,5 +11,9 @@ __pycache__/
 *.sqlite-shm
 *.sqlite-wal
 *.log
+*.secret
+*.secrets
+*.local.py
+secrets/
 outputs/
 ARCHIVE/
