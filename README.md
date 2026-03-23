@@ -1,6 +1,6 @@
 # OHLCV-20-TICKERS-B3
 
-Minimal Python ingestor for daily OHLCV data from 20 selected B3 tickers. The script downloads historical market data from `yfinance` in 2-year windows and stores it in a local SQLite database, keeping the project small, readable, and easy to extend.
+Minimal Python ingestor for daily OHLCV data from 20 selected B3 tickers. The script downloads historical market data from `yfinance` in 2-year windows and stores it in PostgreSQL, keeping the project small, readable, and easy to extend.
 
 ## Who It Is For
 
@@ -9,14 +9,13 @@ This repository is for recruiters, collaborators, and developers who want a comp
 ## Project Scope
 
 - Fixed universe of 20 B3 tickers defined in code.
-- Single Python script with a single SQLite output database.
+- Single Python script with a single PostgreSQL target table.
 - Incremental reloads based on the last stored trading date per ticker.
 - Portfolio-first implementation: simple structure over heavy architecture.
 
 ## Repository Structure
 
 - `ingestor_prices_b3.py`: main script.
-- `prices_b3.db`: generated locally when the script runs.
 - `requirements.txt`: pinned runtime dependencies.
 - `.env.example`: local configuration template.
 - `SYSTEM_STATE.md`: dated log of small repository changes.
@@ -31,8 +30,7 @@ python -m pip install -r requirements.txt
 ## Configuration
 
 - The script reads configuration from environment variables.
-- `PRICES_B3_DB_PATH` optionally overrides the SQLite database location.
-- PostgreSQL credentials, when needed by future migration/loading flows, must come from `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`.
+- PostgreSQL credentials must come from `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` (`POSTGRES_PASSWORD` is accepted as a password fallback).
 - `.env.example` documents the supported local configuration.
 - No secrets in repo: do not commit `.env`, tokens, connection strings, or personal paths.
 
@@ -61,8 +59,8 @@ ITUB4: +6198 rows
 - Data source: `yfinance`.
 - Dependencies are pinned in `requirements.txt`, and GitHub Dependabot is configured for automated dependency alerts.
 - The ticker universe is intentionally fixed in the script.
-- The local database file is recreated automatically if it does not exist, and its location can be overridden with `PRICES_B3_DB_PATH`.
-- The local SQLite database keeps `trade_date` in ISO `YYYY-MM-DD` format.
+- The script creates the PostgreSQL `daily_prices` table if it does not exist.
+- The PostgreSQL schema stores `trade_date` as `DATE`.
 - Small repository changes are recorded in `SYSTEM_STATE.md`.
 - This is not a production trading system and does not include tests beyond a smoke validation with `python -m py_compile`.
 

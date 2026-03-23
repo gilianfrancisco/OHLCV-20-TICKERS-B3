@@ -1,12 +1,11 @@
 import logging
 import os
-import sqlite3
 import time
 from datetime import date
 from datetime import timedelta
-from pathlib import Path
 
 import pandas as pd
+import psycopg
 import yfinance as yf
 
 TICKERS = [
@@ -37,7 +36,6 @@ CHUNK_YEARS = 2
 THROTTLE_SECONDS = 0.5
 RECOVERY_ROUNDS = 5
 RECOVERY_DELAY_SECONDS = 2.0
-DEFAULT_DB_PATH = Path(__file__).resolve().with_name("prices_b3.db")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,30 +45,50 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_db_path():
-    raw_path = os.getenv("PRICES_B3_DB_PATH")
-    if raw_path:
-        return Path(raw_path).expanduser().resolve()
-    return DEFAULT_DB_PATH
-
-
-def connect_db(db_path):
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(db_path)
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS daily_prices (
-            ticker TEXT NOT NULL,
-            trade_date TEXT NOT NULL,
-            open_price REAL NOT NULL,
-            high_price REAL NOT NULL,
-            low_price REAL NOT NULL,
-            close_price REAL NOT NULL,
-            volume INTEGER NOT NULL,
-            PRIMARY KEY (ticker, trade_date)
+def get_postgres_settings():
+    password = os.getenv("PGPASSWORD") or os.getenv("POSTGRES_PASSWORD")
+    required_values = {
+        "PGHOST": os.getenv("PGHOST"),
+        "PGDATABASE": os.getenv("PGDATABASE"),
+        "PGUSER": os.getenv("PGUSER"),
+        "PGPASSWORD": password,
+    }
+    settings = {
+        "host": required_values["PGHOST"],
+        "port": os.getenv("PGPORT", "5432"),
+        "dbname": required_values["PGDATABASE"],
+        "user": required_values["PGUSER"],
+        "password": password,
+    }
+    missing = [name for name, value in required_values.items() if not value]
+    if missing:
+        raise RuntimeError(
+            "Missing required PostgreSQL environment variables: " + ", ".join(missing)
         )
-        """
-    )
+    return settings
+
+
+def format_database_label(settings):
+    return f"{settings['host']}:{settings['port']}/{settings['dbname']}"
+
+
+def connect_db(settings):
+    connection = psycopg.connect(**settings)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_prices (
+                ticker TEXT NOT NULL,
+                trade_date DATE NOT NULL,
+                open_price DOUBLE PRECISION NOT NULL,
+                high_price DOUBLE PRECISION NOT NULL,
+                low_price DOUBLE PRECISION NOT NULL,
+                close_price DOUBLE PRECISION NOT NULL,
+                volume BIGINT NOT NULL,
+                PRIMARY KEY (ticker, trade_date)
+            )
+            """
+        )
     connection.commit()
     return connection
 
@@ -94,11 +112,18 @@ def two_year_windows(start_date, end_date):
 
 
 def get_last_date(connection, ticker):
-    row = connection.execute(
-        "SELECT MAX(trade_date) FROM daily_prices WHERE ticker = ?",
-        (ticker,),
-    ).fetchone()
-    return date.fromisoformat(row[0]) if row and row[0] else None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT MAX(trade_date) FROM daily_prices WHERE ticker = %s",
+            (ticker,),
+        )
+        row = cursor.fetchone()
+
+    if not row or not row[0]:
+        return None
+    if isinstance(row[0], date):
+        return row[0]
+    return date.fromisoformat(row[0])
 
 
 def download_rows(ticker, start_date, end_date):
@@ -133,17 +158,25 @@ def download_rows(ticker, start_date, end_date):
 
 
 def save_rows(connection, rows):
-    changes_before = connection.total_changes
-    connection.executemany(
-        """
-        INSERT OR REPLACE INTO daily_prices
-        (ticker, trade_date, open_price, high_price, low_price, close_price, volume)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        rows,
-    )
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO daily_prices
+            (ticker, trade_date, open_price, high_price, low_price, close_price, volume)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (ticker, trade_date) DO UPDATE
+            SET
+                open_price = EXCLUDED.open_price,
+                high_price = EXCLUDED.high_price,
+                low_price = EXCLUDED.low_price,
+                close_price = EXCLUDED.close_price,
+                volume = EXCLUDED.volume
+            """,
+            rows,
+        )
+        rows_written = cursor.rowcount
     connection.commit()
-    return connection.total_changes - changes_before
+    return rows_written if rows_written and rows_written > -1 else len(rows)
 
 
 def process_window(connection, ticker, chunk_start, chunk_end, recovery_round=None):
@@ -204,11 +237,12 @@ def process_window(connection, ticker, chunk_start, chunk_end, recovery_round=No
 
 
 def main():
-    db_path = get_db_path()
-    connection = connect_db(db_path)
+    settings = get_postgres_settings()
+    database_label = format_database_label(settings)
+    connection = connect_db(settings)
     today = date.today()
     failed_windows = []
-    logger.info("Starting ingestion | tickers=%s | database=%s", len(TICKERS), db_path)
+    logger.info("Starting ingestion | tickers=%s | database=%s", len(TICKERS), database_label)
 
     try:
         for ticker in TICKERS:
