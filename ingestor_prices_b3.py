@@ -106,7 +106,7 @@ def download_rows(ticker, start_date, end_date):
         f"{ticker}.SA",
         start=start_date.strftime("%Y-%m-%d"),
         end=end_date.strftime("%Y-%m-%d"),
-        auto_adjust=True,
+        auto_adjust=False,
         progress=False,
     )
     if dataframe.empty:

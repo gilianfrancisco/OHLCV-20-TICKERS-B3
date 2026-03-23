@@ -6,6 +6,7 @@ Rule: add a new entry at the top with local timestamp `YYYY-MM-DD HH:MM:SS +/-TZ
 
 ## Entries
 
+- 2026-03-22 23:44:17 -03:00 | Switched `yfinance` downloads to `auto_adjust=False` so new ingestions store raw OHLC instead of adjusted OHLC.
 - 2026-03-22 03:12:21 -03:00 | Created `SYSTEM_STATE.md` to track small changes in the repository.
 - 2026-03-22 03:12:21 -03:00 | Removed the temporary `migrar_prices_b3.py` from the public repo and cleaned related README references.
 - 2026-03-22 03:02:11 -03:00 | Normalized the local SQLite `daily_prices.trade_date` schema to enforce ISO `YYYY-MM-DD` values and created a backup in `ARCHIVE/backups/`.
