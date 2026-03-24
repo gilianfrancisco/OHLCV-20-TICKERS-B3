@@ -6,6 +6,7 @@ Rule: add a new entry at the top with local timestamp `YYYY-MM-DD HH:MM:SS +/-TZ
 
 ## Entries
 
+- 2026-03-23 16:05:09 -03:00 | Changed the ingestor to prompt for the PostgreSQL password interactively at runtime instead of reading it from tracked config.
 - 2026-03-23 14:48:20 -03:00 | Updated the `psycopg[binary]` pin to `3.2.13` for Python 3.14 compatibility.
 - 2026-03-23 12:01:09 -03:00 | Converted the ingestor to PostgreSQL-only using `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`.
 - 2026-03-22 23:44:17 -03:00 | Switched `yfinance` downloads to `auto_adjust=False` so new ingestions store raw OHLC instead of adjusted OHLC.

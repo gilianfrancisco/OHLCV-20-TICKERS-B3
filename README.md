@@ -30,7 +30,8 @@ python -m pip install -r requirements.txt
 ## Configuration
 
 - The script reads configuration from environment variables.
-- PostgreSQL credentials must come from `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` (`POSTGRES_PASSWORD` is accepted as a password fallback).
+- PostgreSQL connection settings come from `PGHOST`, `PGPORT`, `PGDATABASE`, and `PGUSER`.
+- The script asks for the PostgreSQL password interactively at runtime.
 - `.env.example` documents the supported local configuration.
 - No secrets in repo: do not commit `.env`, tokens, connection strings, or personal paths.
 

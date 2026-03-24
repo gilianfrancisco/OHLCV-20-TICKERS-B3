@@ -1,3 +1,4 @@
+import getpass
 import logging
 import os
 import time
@@ -46,25 +47,26 @@ logger = logging.getLogger(__name__)
 
 
 def get_postgres_settings():
-    password = os.getenv("PGPASSWORD") or os.getenv("POSTGRES_PASSWORD")
     required_values = {
         "PGHOST": os.getenv("PGHOST"),
         "PGDATABASE": os.getenv("PGDATABASE"),
         "PGUSER": os.getenv("PGUSER"),
-        "PGPASSWORD": password,
     }
     settings = {
         "host": required_values["PGHOST"],
         "port": os.getenv("PGPORT", "5432"),
         "dbname": required_values["PGDATABASE"],
         "user": required_values["PGUSER"],
-        "password": password,
     }
     missing = [name for name, value in required_values.items() if not value]
     if missing:
         raise RuntimeError(
             "Missing required PostgreSQL environment variables: " + ", ".join(missing)
         )
+    password = getpass.getpass("PostgreSQL password: ")
+    if not password:
+        raise RuntimeError("PostgreSQL password prompt was empty.")
+    settings["password"] = password
     return settings
 
 
