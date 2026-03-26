@@ -6,6 +6,8 @@ Rule: add a new entry at the top with local timestamp `YYYY-MM-DD HH:MM:SS +/-TZ
 
 ## Entries
 
+- 2026-03-23 22:34:55 -03:00 | Added `export_petr4_prices.py` to export all PETR4 rows to CSV for comparison with Power BI and charting platforms.
+- 2026-03-23 16:05:09 -03:00 | Added `audit_prices_b3.py` to inspect PostgreSQL date coverage, yearly counts, per-ticker ranges, and suspicious rows.
 - 2026-03-23 16:05:09 -03:00 | Changed the ingestor to prompt for the PostgreSQL password interactively at runtime instead of reading it from tracked config.
 - 2026-03-23 14:48:20 -03:00 | Updated the `psycopg[binary]` pin to `3.2.13` for Python 3.14 compatibility.
 - 2026-03-23 12:01:09 -03:00 | Converted the ingestor to PostgreSQL-only using `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`.
