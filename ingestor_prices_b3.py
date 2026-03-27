@@ -37,6 +37,7 @@ CHUNK_YEARS = 2
 THROTTLE_SECONDS = 0.5
 RECOVERY_ROUNDS = 5
 RECOVERY_DELAY_SECONDS = 2.0
+REFRESH_LOOKBACK_DAYS = 7
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,6 +135,7 @@ def download_rows(ticker, start_date, end_date):
         start=start_date.strftime("%Y-%m-%d"),
         end=end_date.strftime("%Y-%m-%d"),
         auto_adjust=False,
+        repair=True,
         progress=False,
     )
     if dataframe.empty:
@@ -249,8 +251,11 @@ def main():
     try:
         for ticker in TICKERS:
             last_date = get_last_date(connection, ticker)
-            # Revisit the last stored day so a partial latest bar can be corrected on the next run.
-            start_date = last_date if last_date else START_DATE
+            if last_date:
+                lookback_start = last_date - timedelta(days=REFRESH_LOOKBACK_DAYS - 1)
+                start_date = max(START_DATE, lookback_start)
+            else:
+                start_date = START_DATE
             logger.info("%s | start=%s", ticker, start_date)
 
             if start_date > today:
