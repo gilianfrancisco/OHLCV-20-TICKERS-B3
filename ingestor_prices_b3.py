@@ -249,10 +249,11 @@ def main():
     try:
         for ticker in TICKERS:
             last_date = get_last_date(connection, ticker)
-            start_date = last_date + timedelta(days=1) if last_date else START_DATE
+            # Revisit the last stored day so a partial latest bar can be corrected on the next run.
+            start_date = last_date if last_date else START_DATE
             logger.info("%s | start=%s", ticker, start_date)
 
-            if start_date >= today:
+            if start_date > today:
                 logger.info("%s | up to date", ticker)
                 continue
 
