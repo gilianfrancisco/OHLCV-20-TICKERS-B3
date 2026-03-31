@@ -6,6 +6,7 @@ Rule: add a new entry at the top with local timestamp `YYYY-MM-DD HH:MM:SS +/-TZ
 
 ## Entries
 
+- 2026-03-31 20:01:09 -03:00 | Added local default PostgreSQL connection settings so the ingestor runs without preset env vars while still allowing env-based overrides.
 - 2026-03-31 19:31:36 -03:00 | Changed OHLC storage from `DOUBLE PRECISION` to `NUMERIC(18,6)` and normalized inserted prices to decimal values before PostgreSQL upserts.
 - 2026-03-26 21:29:33 -03:00 | Changed the ingestor to re-fetch the last 7 calendar days on every run and enabled `yfinance` repair mode to absorb recent Yahoo corrections with PostgreSQL upserts.
 - 2026-03-26 21:23:13 -03:00 | Changed the ingestor to revisit the last stored trade date on each run so the most recent bar can be refreshed instead of staying permanently stale.

@@ -41,6 +41,10 @@ RECOVERY_ROUNDS = 5
 RECOVERY_DELAY_SECONDS = 2.0
 REFRESH_LOOKBACK_DAYS = 7
 PRICE_QUANTIZER = Decimal("0.000001")
+DEFAULT_PGHOST = "localhost"
+DEFAULT_PGPORT = "5432"
+DEFAULT_PGDATABASE = "prices_b3"
+DEFAULT_PGUSER = "postgres"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,22 +55,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_postgres_settings():
-    required_values = {
-        "PGHOST": os.getenv("PGHOST"),
-        "PGDATABASE": os.getenv("PGDATABASE"),
-        "PGUSER": os.getenv("PGUSER"),
-    }
     settings = {
-        "host": required_values["PGHOST"],
-        "port": os.getenv("PGPORT", "5432"),
-        "dbname": required_values["PGDATABASE"],
-        "user": required_values["PGUSER"],
+        "host": os.getenv("PGHOST") or DEFAULT_PGHOST,
+        "port": os.getenv("PGPORT") or DEFAULT_PGPORT,
+        "dbname": os.getenv("PGDATABASE") or DEFAULT_PGDATABASE,
+        "user": os.getenv("PGUSER") or DEFAULT_PGUSER,
     }
-    missing = [name for name, value in required_values.items() if not value]
-    if missing:
-        raise RuntimeError(
-            "Missing required PostgreSQL environment variables: " + ", ".join(missing)
-        )
     password = getpass.getpass("PostgreSQL password: ")
     if not password:
         raise RuntimeError("PostgreSQL password prompt was empty.")
