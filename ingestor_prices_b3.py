@@ -2,6 +2,8 @@ import getpass
 import logging
 import os
 import time
+from decimal import Decimal
+from decimal import ROUND_HALF_UP
 from datetime import date
 from datetime import timedelta
 
@@ -38,6 +40,7 @@ THROTTLE_SECONDS = 0.5
 RECOVERY_ROUNDS = 5
 RECOVERY_DELAY_SECONDS = 2.0
 REFRESH_LOOKBACK_DAYS = 7
+PRICE_QUANTIZER = Decimal("0.000001")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,13 +86,38 @@ def connect_db(settings):
             CREATE TABLE IF NOT EXISTS daily_prices (
                 ticker TEXT NOT NULL,
                 trade_date DATE NOT NULL,
-                open_price DOUBLE PRECISION NOT NULL,
-                high_price DOUBLE PRECISION NOT NULL,
-                low_price DOUBLE PRECISION NOT NULL,
-                close_price DOUBLE PRECISION NOT NULL,
+                open_price NUMERIC(18,6) NOT NULL,
+                high_price NUMERIC(18,6) NOT NULL,
+                low_price NUMERIC(18,6) NOT NULL,
+                close_price NUMERIC(18,6) NOT NULL,
                 volume BIGINT NOT NULL,
                 PRIMARY KEY (ticker, trade_date)
             )
+            """
+        )
+        cursor.execute(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'daily_prices'
+                      AND column_name IN ('open_price', 'high_price', 'low_price', 'close_price')
+                      AND (
+                          data_type <> 'numeric'
+                          OR numeric_precision <> 18
+                          OR numeric_scale <> 6
+                      )
+                ) THEN
+                    ALTER TABLE daily_prices
+                        ALTER COLUMN open_price TYPE NUMERIC(18,6) USING ROUND(open_price::numeric, 6),
+                        ALTER COLUMN high_price TYPE NUMERIC(18,6) USING ROUND(high_price::numeric, 6),
+                        ALTER COLUMN low_price TYPE NUMERIC(18,6) USING ROUND(low_price::numeric, 6),
+                        ALTER COLUMN close_price TYPE NUMERIC(18,6) USING ROUND(close_price::numeric, 6);
+                END IF;
+            END $$;
             """
         )
     connection.commit()
@@ -129,6 +157,10 @@ def get_last_date(connection, ticker):
     return date.fromisoformat(row[0])
 
 
+def normalize_price(value):
+    return Decimal(str(value)).quantize(PRICE_QUANTIZER, rounding=ROUND_HALF_UP)
+
+
 def download_rows(ticker, start_date, end_date):
     dataframe = yf.download(
         f"{ticker}.SA",
@@ -151,10 +183,10 @@ def download_rows(ticker, start_date, end_date):
             (
                 ticker,
                 pd.to_datetime(row["Date"]).strftime("%Y-%m-%d"),
-                float(row["Open"]),
-                float(row["High"]),
-                float(row["Low"]),
-                float(row["Close"]),
+                normalize_price(row["Open"]),
+                normalize_price(row["High"]),
+                normalize_price(row["Low"]),
+                normalize_price(row["Close"]),
                 int(row["Volume"]),
             )
         )
