@@ -11,11 +11,12 @@ If you want a simple local dataset of Brazilian stock prices for analysis, dashb
 - download daily OHLCV history from `yfinance`
 - store the data in PostgreSQL
 - update existing tickers incrementally on later runs
+- keep the tracked dataset intentionally small enough for local use and portfolio review
 - keep the implementation small enough to review quickly
 
 ## Current Scope
 
-- Fixed list of 20 B3 tickers defined in code
+- Fixed list of 20 B3 tickers defined in code to keep data volume manageable
 - One ingestion script: `ingestor_prices_b3.py`
 - One PostgreSQL table: `daily_prices`
 - Daily historical prices only
@@ -33,11 +34,11 @@ If you want a simple local dataset of Brazilian stock prices for analysis, dashb
 
 ## Requirements
 
-- Python 3.14 or a compatible recent Python 3 version
+- Python 3.14
 - PostgreSQL
 - Internet access when running the ingestor, because data comes from Yahoo Finance
 
-Validated locally with Python `3.14.4`.
+Validated locally with Python `3.14.4`. The GitHub Actions workflow currently tests Python `3.14` only.
 
 ## Quick Start
 
@@ -92,6 +93,8 @@ docker compose up -d db
 .venv/bin/python ingestor_prices_b3.py
 ```
 
+The live ingestion path depends on Yahoo Finance being reachable and may return incomplete or empty results if the upstream service changes, rate-limits requests, or is temporarily unavailable.
+
 To confirm data landed in PostgreSQL:
 
 ```bash
@@ -128,6 +131,12 @@ Current tests are intentionally small and cover the most important non-network b
 - price normalization
 - Yahoo Finance row shaping and normalization
 
+The testing strategy is intentionally reviewer-friendly:
+
+- deterministic unit tests for core logic
+- one optional local PostgreSQL smoke test for the upsert path
+- no live-network tests in CI, so the default validation path stays stable and easy to reproduce
+
 Run them with:
 
 ```bash
@@ -148,6 +157,7 @@ PGPASSWORD=postgres PRICES_B3_RUN_DB_TESTS=1 .venv/bin/python -m unittest discov
 - No CLI arguments or configurable ticker universe
 - No scheduling, orchestration, or production deployment support
 - Depends on Yahoo Finance availability and `yfinance` behavior
+- Live downloads are best-effort only and are not designed for guaranteed completeness
 - Not intended for trading, backtesting accuracy guarantees, or production use
 
 ## Publishing Notes

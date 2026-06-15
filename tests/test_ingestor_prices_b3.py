@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import unittest
 from datetime import date
@@ -90,6 +91,68 @@ class DateAndPriceHelpersTests(unittest.TestCase):
             ingestor_prices_b3.normalize_price("10.1234567"),
             Decimal("10.123457"),
         )
+
+
+class DatabaseHelperTests(unittest.TestCase):
+    def test_get_last_date_returns_none_when_no_rows_exist(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = (None,)
+
+        last_date = ingestor_prices_b3.get_last_date(connection, "VALE3")
+
+        self.assertIsNone(last_date)
+
+    def test_get_last_date_returns_date_instance_without_conversion(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = (date(2024, 1, 2),)
+
+        last_date = ingestor_prices_b3.get_last_date(connection, "VALE3")
+
+        self.assertEqual(last_date, date(2024, 1, 2))
+
+    def test_get_last_date_converts_iso_string_to_date(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = ("2024-01-02",)
+
+        last_date = ingestor_prices_b3.get_last_date(connection, "VALE3")
+
+        self.assertEqual(last_date, date(2024, 1, 2))
+
+    @mock.patch("ingestor_prices_b3.psycopg.connect")
+    def test_connect_db_creates_table_and_commits(self, connect_mock):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        connect_mock.return_value = connection
+        settings = {
+            "host": "localhost",
+            "port": "5432",
+            "dbname": "prices_b3",
+            "user": "postgres",
+            "password": "secret",
+        }
+
+        returned_connection = ingestor_prices_b3.connect_db(settings)
+
+        self.assertIs(returned_connection, connection)
+        connect_mock.assert_called_once_with(**settings)
+        self.assertEqual(cursor.execute.call_count, 2)
+        executed_sql = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+        self.assertIn("CREATE TABLE IF NOT EXISTS daily_prices", executed_sql)
+        self.assertIn("ALTER TABLE daily_prices", executed_sql)
+        connection.commit.assert_called_once()
+
+
+class TickerListTests(unittest.TestCase):
+    def test_ticker_list_has_expected_size_and_unique_values(self):
+        self.assertEqual(len(ingestor_prices_b3.TICKERS), 20)
+        self.assertEqual(len(set(ingestor_prices_b3.TICKERS)), 20)
+
+    def test_ticker_list_uses_b3_style_symbols(self):
+        for ticker in ingestor_prices_b3.TICKERS:
+            self.assertRegex(ticker, re.compile(r"^[A-Z0-9]{4,6}$"))
 
 
 class DownloadRowsTests(unittest.TestCase):
