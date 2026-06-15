@@ -1,78 +1,157 @@
-# OHLCV-20-TICKERS-B3
+# prices_b3
 
-Minimal Python ingestor for daily OHLCV data from 20 selected B3 tickers. The script downloads historical market data from `yfinance` in 2-year windows and stores it in PostgreSQL, keeping the project small, readable, and easy to extend.
+Small Python project that downloads daily OHLCV data for 20 selected B3 tickers from Yahoo Finance and stores it in PostgreSQL.
 
-## Who It Is For
+This repository is meant to be a compact portfolio project, not a production market data platform. The focus is on clear code, reproducible local setup, and an honest project boundary.
 
-This repository is for recruiters, collaborators, and developers who want a compact example of a market data ingestion script with clear inputs, a predictable local output, and a simple incremental update flow.
+## What Problem It Solves
 
-## Project Scope
+If you want a simple local dataset of Brazilian stock prices for analysis, dashboards, or SQL practice, this project gives you a minimal ingestion flow:
 
-- Fixed universe of 20 B3 tickers defined in code.
-- Single Python script with a single PostgreSQL target table.
-- Incremental reloads based on the last stored trading date per ticker.
-- Portfolio-first implementation: simple structure over heavy architecture.
+- download daily OHLCV history from `yfinance`
+- store the data in PostgreSQL
+- update existing tickers incrementally on later runs
+- keep the implementation small enough to review quickly
 
-## Repository Structure
+## Current Scope
 
-- `ingestor_prices_b3.py`: main script.
-- `audit_prices_b3.py`: PostgreSQL audit script for date coverage, counts, and suspicious rows.
-- `export_petr4_prices.py`: exports all PETR4 rows to CSV for external comparison.
-- `requirements.txt`: pinned runtime dependencies.
-- `.env.example`: local configuration template.
-- `SYSTEM_STATE.md`: dated log of small repository changes.
+- Fixed list of 20 B3 tickers defined in code
+- One ingestion script: `ingestor_prices_b3.py`
+- One PostgreSQL table: `daily_prices`
+- Daily historical prices only
+- Local development setup only
 
-## Install
+## Repository Layout
 
-```powershell
-python -m venv .venv
-python -m pip install -r requirements.txt
+- `ingestor_prices_b3.py`: downloads data and upserts it into PostgreSQL
+- `tests/test_ingestor_prices_b3.py`: unit tests plus an optional PostgreSQL smoke test
+- `requirements.txt`: pinned runtime dependencies
+- `.env.example`: local PostgreSQL settings template
+- `docker-compose.yml`: optional local PostgreSQL service for easier setup
+- `.github/workflows/tests.yml`: runs the unit test suite on push and pull request
+- `LICENSE`: MIT license for the repository
+
+## Requirements
+
+- Python 3.14 or a compatible recent Python 3 version
+- PostgreSQL
+- Internet access when running the ingestor, because data comes from Yahoo Finance
+
+Validated locally with Python `3.14.4`.
+
+## Quick Start
+
+The command examples below use bash on Linux/macOS. On Windows PowerShell, use the equivalent virtual environment path such as `.venv\Scripts\python`.
+
+1. Create a virtual environment and install dependencies.
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-## Configuration
+2. Create a local config file.
 
-- The script reads configuration from environment variables.
-- PostgreSQL connection settings come from `PGHOST`, `PGPORT`, `PGDATABASE`, and `PGUSER`.
-- The script asks for the PostgreSQL password interactively at runtime.
-- `.env.example` documents the supported local configuration.
-- No secrets in repo: do not commit `.env`, tokens, connection strings, or personal paths.
-
-## Run
-
-```powershell
-python ingestor_prices_b3.py
-python audit_prices_b3.py
-python export_petr4_prices.py
+```bash
+cp .env.example .env
 ```
 
-## Smoke Test
+3. Start PostgreSQL.
 
-```powershell
-python -m py_compile ingestor_prices_b3.py
-python -m py_compile audit_prices_b3.py
-python -m py_compile export_petr4_prices.py
+Option A: use the included Docker Compose service.
+
+```bash
+docker compose up -d db
+```
+
+Option B: use your own local PostgreSQL instance and update `.env` with its connection details.
+
+4. Run the ingestor.
+
+```bash
+.venv/bin/python ingestor_prices_b3.py
+```
+
+The script loads `.env` automatically if it exists. If `PGPASSWORD` is not set, it will prompt for the PostgreSQL password interactively.
+
+## Fresh Checkout Validation
+
+These commands are the simplest review path for a recruiter or technical reviewer:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+To run the actual ingestion end to end:
+
+```bash
+docker compose up -d db
+.venv/bin/python ingestor_prices_b3.py
+```
+
+To confirm data landed in PostgreSQL:
+
+```bash
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d prices_b3 -c \
+  "SELECT ticker, MIN(trade_date), MAX(trade_date), COUNT(*) AS rows_count
+   FROM daily_prices
+   GROUP BY ticker
+   ORDER BY ticker;"
 ```
 
 ## Example Output
 
 ```text
-VALE3: +6234 rows
-PETR4: +6210 rows
-ITUB4: +6198 rows
+2026-06-15 10:12:08 | INFO | Starting ingestion | tickers=20 | database=localhost:5432/prices_b3
+2026-06-15 10:12:08 | INFO | VALE3 | start=2000-01-01
+2026-06-15 10:12:10 | INFO | VALE3 | window=2000-01-01..2001-12-31 | inserted=498
 ```
 
-## Important Decisions And Limitations
+## How It Works
 
-- Data source: `yfinance`.
-- Dependencies are pinned in `requirements.txt`, and GitHub Dependabot is configured for automated dependency alerts.
-- The ticker universe is intentionally fixed in the script.
-- The script creates the PostgreSQL `daily_prices` table if it does not exist.
-- The PostgreSQL schema stores `trade_date` as `DATE`.
-- The audit script helps verify overall date coverage, per-ticker max dates, yearly counts, and suspicious rows.
-- The PETR4 export script writes `outputs/petr4_prices.csv` for direct comparison with Power BI or charting tools.
-- Small repository changes are recorded in `SYSTEM_STATE.md`.
-- This is not a production trading system and does not include tests beyond a smoke validation with `python -m py_compile`.
+- The ticker list is hard-coded in the script.
+- Data is downloaded in 2-year windows.
+- Existing tickers are refreshed from the last stored date with a 7-day lookback.
+- Inserts use PostgreSQL upserts on `(ticker, trade_date)`.
+- The table is created automatically if it does not exist.
 
-## Contribution / Project Boundary
+## Testing
 
-This repository is intentionally small and focused. Improvements should keep the code understandable, avoid unnecessary abstraction, and preserve the single-script entry point unless a new requirement clearly justifies more structure.
+Current tests are intentionally small and cover the most important non-network behavior:
+
+- `.env` loading
+- PostgreSQL settings resolution
+- date window generation
+- price normalization
+- Yahoo Finance row shaping and normalization
+
+Run them with:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+The unit test suite also runs automatically in GitHub Actions on push and pull request.
+
+There is also an optional PostgreSQL smoke test for the upsert path. It uses a temporary table on the same connection, so it does not modify the permanent `daily_prices` table.
+
+```bash
+docker compose up -d db
+PGPASSWORD=postgres PRICES_B3_RUN_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
+```
+
+## Limitations
+
+- No CLI arguments or configurable ticker universe
+- No scheduling, orchestration, or production deployment support
+- Depends on Yahoo Finance availability and `yfinance` behavior
+- Not intended for trading, backtesting accuracy guarantees, or production use
+
+## Publishing Notes
+
+- Do not commit a real `.env` file
+- Local database backups and generated files are ignored by `.gitignore`
+- The Docker setup is intentionally minimal and only exists to make local validation easier

@@ -45,6 +45,7 @@ DEFAULT_PGHOST = "localhost"
 DEFAULT_PGPORT = "5432"
 DEFAULT_PGDATABASE = "prices_b3"
 DEFAULT_PGUSER = "postgres"
+DEFAULT_ENV_FILE = ".env"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +55,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def load_env_file(env_file_path=DEFAULT_ENV_FILE):
+    if not os.path.exists(env_file_path):
+        return
+
+    with open(env_file_path, encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            if line.startswith("export "):
+                line = line[len("export ") :].strip()
+
+            if "=" not in line:
+                logger.warning("Skipping invalid line in %s: %s", env_file_path, raw_line.rstrip())
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if not key:
+                logger.warning("Skipping invalid line in %s: %s", env_file_path, raw_line.rstrip())
+                continue
+
+            value = value.strip().strip("'\"")
+            os.environ.setdefault(key, value)
+
+
 def get_postgres_settings():
     settings = {
         "host": os.getenv("PGHOST") or DEFAULT_PGHOST,
@@ -61,7 +89,9 @@ def get_postgres_settings():
         "dbname": os.getenv("PGDATABASE") or DEFAULT_PGDATABASE,
         "user": os.getenv("PGUSER") or DEFAULT_PGUSER,
     }
-    password = getpass.getpass("PostgreSQL password: ")
+    password = os.getenv("PGPASSWORD")
+    if not password:
+        password = getpass.getpass("PostgreSQL password: ")
     if not password:
         raise RuntimeError("PostgreSQL password prompt was empty.")
     settings["password"] = password
@@ -267,6 +297,7 @@ def process_window(connection, ticker, chunk_start, chunk_end, recovery_round=No
 
 
 def main():
+    load_env_file()
     settings = get_postgres_settings()
     database_label = format_database_label(settings)
     connection = connect_db(settings)

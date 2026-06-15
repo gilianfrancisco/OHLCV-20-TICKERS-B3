@@ -4,6 +4,8 @@
 .envrc
 .pgpass
 *.pgpass
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *.db
@@ -11,6 +13,7 @@ __pycache__/
 *.sqlite-shm
 *.sqlite-wal
 *.log
+.pytest_cache/
 *.secret
 *.secrets
 *.local.py
