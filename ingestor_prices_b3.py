@@ -10,6 +10,8 @@ from datetime import timedelta
 import pandas as pd
 import psycopg
 import yfinance as yf
+from yfinance.config import YfConfig
+from yfinance.exceptions import YFPricesMissingError
 
 TICKERS = [
     "VALE3",
@@ -185,15 +187,36 @@ def normalize_price(value):
     return Decimal(str(value)).quantize(PRICE_QUANTIZER, rounding=ROUND_HALF_UP)
 
 
+def download_history_frame(ticker, start_date, end_date):
+    symbol = f"{ticker}.SA"
+    previous_hide_exceptions = YfConfig.debug.hide_exceptions
+    YfConfig.debug.hide_exceptions = False
+    try:
+        return yf.Ticker(symbol).history(
+            start=start_date.strftime("%Y-%m-%d"),
+            end=end_date.strftime("%Y-%m-%d"),
+            interval="1d",
+            actions=False,
+            auto_adjust=False,
+            repair=True,
+        )
+    finally:
+        YfConfig.debug.hide_exceptions = previous_hide_exceptions
+
+
 def download_rows(ticker, start_date, end_date):
-    dataframe = yf.download(
-        f"{ticker}.SA",
-        start=start_date.strftime("%Y-%m-%d"),
-        end=end_date.strftime("%Y-%m-%d"),
-        auto_adjust=False,
-        repair=True,
-        progress=False,
-    )
+    try:
+        dataframe = download_history_frame(ticker, start_date, end_date)
+    except YFPricesMissingError as error:
+        logger.info(
+            "%s | no price data available | start=%s | end=%s | reason=%s",
+            ticker,
+            start_date,
+            end_date - timedelta(days=1),
+            error,
+        )
+        return []
+
     if dataframe.empty:
         return []
 

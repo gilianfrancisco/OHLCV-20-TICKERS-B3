@@ -156,9 +156,9 @@ class TickerListTests(unittest.TestCase):
 
 
 class DownloadRowsTests(unittest.TestCase):
-    @mock.patch("ingestor_prices_b3.yf.download")
-    def test_download_rows_normalizes_multiindex_data(self, download_mock):
-        download_mock.return_value = pd.DataFrame(
+    @mock.patch("ingestor_prices_b3.download_history_frame")
+    def test_download_rows_normalizes_multiindex_data(self, download_history_frame_mock):
+        download_history_frame_mock.return_value = pd.DataFrame(
             [[10.1234567, 10.3, 9.9, 10.2, 1234]],
             index=pd.Index([pd.Timestamp("2024-01-02")], name="Date"),
             columns=pd.MultiIndex.from_tuples(
@@ -188,20 +188,59 @@ class DownloadRowsTests(unittest.TestCase):
                 )
             ],
         )
-        download_mock.assert_called_once_with(
-            "VALE3.SA",
-            start="2024-01-01",
-            end="2024-01-03",
-            auto_adjust=False,
-            repair=True,
-            progress=False,
+        download_history_frame_mock.assert_called_once_with(
+            "VALE3",
+            date(2024, 1, 1),
+            date(2024, 1, 3),
         )
 
-    @mock.patch("ingestor_prices_b3.yf.download", return_value=pd.DataFrame())
-    def test_download_rows_returns_empty_list_for_empty_frame(self, _download_mock):
+    @mock.patch("ingestor_prices_b3.download_history_frame", return_value=pd.DataFrame())
+    def test_download_rows_returns_empty_list_for_empty_frame(self, _download_history_frame_mock):
         rows = ingestor_prices_b3.download_rows("VALE3", date(2024, 1, 1), date(2024, 1, 3))
 
         self.assertEqual(rows, [])
+
+    @mock.patch(
+        "ingestor_prices_b3.download_history_frame",
+        side_effect=ingestor_prices_b3.YFPricesMissingError(
+            "VALE3.SA",
+            '(1d 2024-01-01 -> 2024-01-03) (Yahoo error = "Data doesn\'t exist")',
+        ),
+    )
+    def test_download_rows_returns_empty_list_for_missing_price_data(self, _download_history_frame_mock):
+        rows = ingestor_prices_b3.download_rows("VALE3", date(2024, 1, 1), date(2024, 1, 3))
+
+        self.assertEqual(rows, [])
+
+    @mock.patch(
+        "ingestor_prices_b3.download_history_frame",
+        side_effect=ModuleNotFoundError("No module named 'scipy'"),
+    )
+    def test_download_rows_propagates_unexpected_download_failures(self, _download_history_frame_mock):
+        with self.assertRaises(ModuleNotFoundError):
+            ingestor_prices_b3.download_rows("VALE3", date(2024, 1, 1), date(2024, 1, 3))
+
+    @mock.patch("ingestor_prices_b3.yf.Ticker")
+    def test_download_history_frame_calls_ticker_history_and_restores_yfinance_config(self, ticker_mock):
+        ticker_mock.return_value.history.return_value = pd.DataFrame()
+        original_value = ingestor_prices_b3.YfConfig.debug.hide_exceptions
+        ingestor_prices_b3.YfConfig.debug.hide_exceptions = True
+
+        try:
+            ingestor_prices_b3.download_history_frame("VALE3", date(2024, 1, 1), date(2024, 1, 3))
+        finally:
+            self.assertTrue(ingestor_prices_b3.YfConfig.debug.hide_exceptions)
+            ingestor_prices_b3.YfConfig.debug.hide_exceptions = original_value
+
+        ticker_mock.assert_called_once_with("VALE3.SA")
+        ticker_mock.return_value.history.assert_called_once_with(
+            start="2024-01-01",
+            end="2024-01-03",
+            interval="1d",
+            actions=False,
+            auto_adjust=False,
+            repair=True,
+        )
 
 
 @unittest.skipUnless(
