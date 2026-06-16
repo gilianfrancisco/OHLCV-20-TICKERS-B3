@@ -12,6 +12,7 @@ import psycopg
 import yfinance as yf
 from yfinance.config import YfConfig
 from yfinance.exceptions import YFPricesMissingError
+from yfinance.exceptions import YFTzMissingError
 
 TICKERS = [
     "VALE3",
@@ -55,6 +56,10 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+class RecoverableDownloadError(RuntimeError):
+    """Raised for transient Yahoo Finance download issues that should be retried."""
 
 
 def load_env_file(env_file_path=DEFAULT_ENV_FILE):
@@ -187,36 +192,11 @@ def normalize_price(value):
     return Decimal(str(value)).quantize(PRICE_QUANTIZER, rounding=ROUND_HALF_UP)
 
 
-def download_history_frame(ticker, start_date, end_date):
-    symbol = f"{ticker}.SA"
-    previous_hide_exceptions = YfConfig.debug.hide_exceptions
-    YfConfig.debug.hide_exceptions = False
-    try:
-        return yf.Ticker(symbol).history(
-            start=start_date.strftime("%Y-%m-%d"),
-            end=end_date.strftime("%Y-%m-%d"),
-            interval="1d",
-            actions=False,
-            auto_adjust=False,
-            repair=True,
-        )
-    finally:
-        YfConfig.debug.hide_exceptions = previous_hide_exceptions
+def window_targets_present_day(end_date):
+    return end_date - timedelta(days=1) == date.today()
 
 
-def download_rows(ticker, start_date, end_date):
-    try:
-        dataframe = download_history_frame(ticker, start_date, end_date)
-    except YFPricesMissingError as error:
-        logger.info(
-            "%s | no price data available | start=%s | end=%s | reason=%s",
-            ticker,
-            start_date,
-            end_date - timedelta(days=1),
-            error,
-        )
-        return []
-
+def rows_from_dataframe(ticker, dataframe):
     if dataframe.empty:
         return []
 
@@ -238,6 +218,67 @@ def download_rows(ticker, start_date, end_date):
             )
         )
     return rows
+
+
+def download_history_frame(ticker, start_date, end_date):
+    symbol = f"{ticker}.SA"
+    previous_hide_exceptions = YfConfig.debug.hide_exceptions
+    YfConfig.debug.hide_exceptions = False
+    try:
+        return yf.Ticker(symbol).history(
+            start=start_date.strftime("%Y-%m-%d"),
+            end=end_date.strftime("%Y-%m-%d"),
+            interval="1d",
+            actions=False,
+            auto_adjust=False,
+            repair=True,
+        )
+    finally:
+        YfConfig.debug.hide_exceptions = previous_hide_exceptions
+
+
+def download_rows_without_present_day(ticker, start_date, end_date):
+    present_day = end_date - timedelta(days=1)
+    fallback_end = end_date - timedelta(days=1)
+
+    if fallback_end <= start_date:
+        logger.info("%s | No available data for present day | date=%s", ticker, present_day)
+        return []
+
+    fallback_dataframe = download_history_frame(ticker, start_date, fallback_end)
+    logger.info(
+        "%s | No available data for present day | date=%s | using_data_through=%s",
+        ticker,
+        present_day,
+        fallback_end - timedelta(days=1),
+    )
+    return rows_from_dataframe(ticker, fallback_dataframe)
+
+
+def download_rows(ticker, start_date, end_date):
+    try:
+        dataframe = download_history_frame(ticker, start_date, end_date)
+    except Exception as error:
+        if window_targets_present_day(end_date):
+            try:
+                return download_rows_without_present_day(ticker, start_date, end_date)
+            except Exception:
+                pass
+
+        if isinstance(error, YFPricesMissingError):
+            logger.info(
+                "%s | no price data available | start=%s | end=%s | reason=%s",
+                ticker,
+                start_date,
+                end_date - timedelta(days=1),
+                error,
+            )
+            return []
+        if isinstance(error, YFTzMissingError):
+            raise RecoverableDownloadError(str(error)) from error
+        raise
+
+    return rows_from_dataframe(ticker, dataframe)
 
 
 def save_rows(connection, rows):
@@ -278,6 +319,25 @@ def process_window(connection, ticker, chunk_start, chunk_end, recovery_round=No
 
     try:
         rows = download_rows(ticker, chunk_start, chunk_end)
+    except RecoverableDownloadError as error:
+        if recovery_round is None:
+            logger.warning(
+                "%s | failed window=%s..%s | queued_for_recovery | reason=%s",
+                ticker,
+                chunk_start,
+                chunk_end_inclusive,
+                error,
+            )
+        else:
+            logger.warning(
+                "%s | recovery_round=%s | failed window=%s..%s | reason=%s",
+                ticker,
+                recovery_round,
+                chunk_start,
+                chunk_end_inclusive,
+                error,
+            )
+        return None
     except Exception:
         if recovery_round is None:
             logger.exception(

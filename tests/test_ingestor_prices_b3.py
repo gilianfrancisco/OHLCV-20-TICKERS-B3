@@ -9,6 +9,8 @@ from unittest import mock
 import ingestor_prices_b3
 import pandas as pd
 
+ingestor_prices_b3.load_env_file()
+
 
 class LoadEnvFileTests(unittest.TestCase):
     def test_load_env_file_sets_missing_values_only(self):
@@ -156,6 +158,12 @@ class TickerListTests(unittest.TestCase):
 
 
 class DownloadRowsTests(unittest.TestCase):
+    def test_window_targets_present_day_returns_true_only_for_current_window(self):
+        today = date.today()
+
+        self.assertTrue(ingestor_prices_b3.window_targets_present_day(today + ingestor_prices_b3.timedelta(days=1)))
+        self.assertFalse(ingestor_prices_b3.window_targets_present_day(today))
+
     @mock.patch("ingestor_prices_b3.download_history_frame")
     def test_download_rows_normalizes_multiindex_data(self, download_history_frame_mock):
         download_history_frame_mock.return_value = pd.DataFrame(
@@ -220,6 +228,61 @@ class DownloadRowsTests(unittest.TestCase):
         with self.assertRaises(ModuleNotFoundError):
             ingestor_prices_b3.download_rows("VALE3", date(2024, 1, 1), date(2024, 1, 3))
 
+    @mock.patch(
+        "ingestor_prices_b3.download_history_frame",
+        side_effect=ingestor_prices_b3.YFTzMissingError("VALE3.SA"),
+    )
+    def test_download_rows_wraps_timezone_metadata_failures_as_recoverable(self, _download_history_frame_mock):
+        with self.assertRaises(ingestor_prices_b3.RecoverableDownloadError):
+            ingestor_prices_b3.download_rows("VALE3", date(2024, 1, 1), date(2024, 1, 3))
+
+    @mock.patch("ingestor_prices_b3.download_history_frame")
+    def test_download_rows_uses_previous_day_data_when_present_day_fails(self, download_history_frame_mock):
+        today = date.today()
+        start_date = today - ingestor_prices_b3.timedelta(days=6)
+        end_date = today + ingestor_prices_b3.timedelta(days=1)
+
+        download_history_frame_mock.side_effect = [
+            ingestor_prices_b3.YFPricesMissingError("VALE3.SA", '(1d current day unavailable)'),
+            pd.DataFrame(
+                [[10.1234567, 10.3, 9.9, 10.2, 1234]],
+                index=pd.Index([pd.Timestamp(start_date.isoformat())], name="Date"),
+                columns=pd.MultiIndex.from_tuples(
+                    [
+                        ("Open", "VALE3.SA"),
+                        ("High", "VALE3.SA"),
+                        ("Low", "VALE3.SA"),
+                        ("Close", "VALE3.SA"),
+                        ("Volume", "VALE3.SA"),
+                    ]
+                ),
+            ),
+        ]
+
+        rows = ingestor_prices_b3.download_rows("VALE3", start_date, end_date)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], "VALE3")
+        self.assertEqual(download_history_frame_mock.call_args_list[0].args, ("VALE3", start_date, end_date))
+        self.assertEqual(
+            download_history_frame_mock.call_args_list[1].args,
+            ("VALE3", start_date, today),
+        )
+
+    @mock.patch(
+        "ingestor_prices_b3.download_history_frame",
+        side_effect=ingestor_prices_b3.YFPricesMissingError("VALE3.SA", '(1d current day unavailable)'),
+    )
+    def test_download_rows_returns_empty_for_present_day_only_window(self, _download_history_frame_mock):
+        today = date.today()
+        rows = ingestor_prices_b3.download_rows(
+            "VALE3",
+            today,
+            today + ingestor_prices_b3.timedelta(days=1),
+        )
+
+        self.assertEqual(rows, [])
+
     @mock.patch("ingestor_prices_b3.yf.Ticker")
     def test_download_history_frame_calls_ticker_history_and_restores_yfinance_config(self, ticker_mock):
         ticker_mock.return_value.history.return_value = pd.DataFrame()
@@ -241,6 +304,29 @@ class DownloadRowsTests(unittest.TestCase):
             auto_adjust=False,
             repair=True,
         )
+
+
+class ProcessWindowTests(unittest.TestCase):
+    @mock.patch("ingestor_prices_b3.logger.warning")
+    @mock.patch(
+        "ingestor_prices_b3.download_rows",
+        side_effect=ingestor_prices_b3.RecoverableDownloadError("temporary Yahoo metadata failure"),
+    )
+    def test_process_window_logs_recoverable_failures_without_traceback(
+        self,
+        _download_rows_mock,
+        warning_mock,
+    ):
+        rows_inserted = ingestor_prices_b3.process_window(
+            mock.MagicMock(),
+            "VALE3",
+            date(2024, 1, 1),
+            date(2024, 1, 3),
+        )
+
+        self.assertIsNone(rows_inserted)
+        warning_mock.assert_called_once()
+        self.assertIn("queued_for_recovery", warning_mock.call_args.args[0])
 
 
 @unittest.skipUnless(

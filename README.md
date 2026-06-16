@@ -152,6 +152,8 @@ docker compose up -d db
 PGPASSWORD=postgres PRICES_B3_RUN_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
 ```
 
+The test module loads `.env` automatically, so you can also set `PRICES_B3_RUN_DB_TESTS=1` there for local runs instead of prefixing the command each time.
+
 ## Limitations
 
 - No CLI arguments or configurable ticker universe
