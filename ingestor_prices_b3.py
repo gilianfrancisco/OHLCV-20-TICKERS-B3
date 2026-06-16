@@ -10,6 +10,7 @@ from datetime import timedelta
 import pandas as pd
 import psycopg
 import yfinance as yf
+from curl_cffi.requests.exceptions import HTTPError
 from yfinance.config import YfConfig
 from yfinance.exceptions import YFPricesMissingError
 from yfinance.exceptions import YFTzMissingError
@@ -28,7 +29,7 @@ TICKERS = [
     "ITSA4",
     "SBSP3",
     "RENT3",
-    "EMBR3",
+    "GGBR4",
     "ABEV3",
     "ENEV3",
     "WEGE3",
@@ -220,6 +221,17 @@ def rows_from_dataframe(ticker, dataframe):
     return rows
 
 
+def classify_recoverable_download_error(error):
+    if isinstance(error, YFTzMissingError):
+        return str(error)
+    if isinstance(error, HTTPError):
+        status_code = getattr(getattr(error, "response", None), "status_code", None)
+        if status_code is not None:
+            return f"Yahoo metadata request failed: HTTP {status_code}"
+        return "Yahoo metadata request failed"
+    return None
+
+
 def download_history_frame(ticker, start_date, end_date):
     symbol = f"{ticker}.SA"
     previous_hide_exceptions = YfConfig.debug.hide_exceptions
@@ -274,8 +286,9 @@ def download_rows(ticker, start_date, end_date):
                 error,
             )
             return []
-        if isinstance(error, YFTzMissingError):
-            raise RecoverableDownloadError(str(error)) from error
+        recoverable_reason = classify_recoverable_download_error(error)
+        if recoverable_reason is not None:
+            raise RecoverableDownloadError(recoverable_reason) from error
         raise
 
     return rows_from_dataframe(ticker, dataframe)

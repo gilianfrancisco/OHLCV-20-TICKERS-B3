@@ -8,6 +8,7 @@ from unittest import mock
 
 import ingestor_prices_b3
 import pandas as pd
+from curl_cffi.requests.exceptions import HTTPError
 
 ingestor_prices_b3.load_env_file()
 
@@ -236,6 +237,14 @@ class DownloadRowsTests(unittest.TestCase):
         with self.assertRaises(ingestor_prices_b3.RecoverableDownloadError):
             ingestor_prices_b3.download_rows("VALE3", date(2024, 1, 1), date(2024, 1, 3))
 
+    @mock.patch(
+        "ingestor_prices_b3.download_history_frame",
+        side_effect=HTTPError("HTTP Error 404:", 0, mock.Mock(status_code=404)),
+    )
+    def test_download_rows_wraps_yahoo_http_failures_as_recoverable(self, _download_history_frame_mock):
+        with self.assertRaises(ingestor_prices_b3.RecoverableDownloadError):
+            ingestor_prices_b3.download_rows("VALE3", date(2024, 1, 1), date(2024, 1, 3))
+
     @mock.patch("ingestor_prices_b3.download_history_frame")
     def test_download_rows_uses_previous_day_data_when_present_day_fails(self, download_history_frame_mock):
         today = date.today()
@@ -307,6 +316,14 @@ class DownloadRowsTests(unittest.TestCase):
 
 
 class ProcessWindowTests(unittest.TestCase):
+    def test_classify_recoverable_download_error_formats_yahoo_http_error(self):
+        error = HTTPError("HTTP Error 404:", 0, mock.Mock(status_code=404))
+
+        self.assertEqual(
+            ingestor_prices_b3.classify_recoverable_download_error(error),
+            "Yahoo metadata request failed: HTTP 404",
+        )
+
     @mock.patch("ingestor_prices_b3.logger.warning")
     @mock.patch(
         "ingestor_prices_b3.download_rows",
