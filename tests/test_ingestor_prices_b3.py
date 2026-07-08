@@ -147,6 +147,41 @@ class DatabaseHelperTests(unittest.TestCase):
         self.assertIn("ALTER TABLE daily_prices", executed_sql)
         connection.commit.assert_called_once()
 
+    @mock.patch("ingestor_prices_b3.psycopg.connect")
+    def test_connect_db_migrates_legacy_price_columns_to_numeric(self, connect_mock):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        connect_mock.return_value = connection
+
+        ingestor_prices_b3.connect_db(
+            {
+                "host": "localhost",
+                "port": "5432",
+                "dbname": "prices_b3",
+                "user": "postgres",
+                "password": "secret",
+            }
+        )
+
+        executed_sql = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+        self.assertIn("data_type <> 'numeric'", executed_sql)
+        self.assertIn(
+            "ALTER COLUMN open_price TYPE NUMERIC(18,6) USING ROUND(open_price::numeric, 6)",
+            executed_sql,
+        )
+        self.assertIn(
+            "ALTER COLUMN high_price TYPE NUMERIC(18,6) USING ROUND(high_price::numeric, 6)",
+            executed_sql,
+        )
+        self.assertIn(
+            "ALTER COLUMN low_price TYPE NUMERIC(18,6) USING ROUND(low_price::numeric, 6)",
+            executed_sql,
+        )
+        self.assertIn(
+            "ALTER COLUMN close_price TYPE NUMERIC(18,6) USING ROUND(close_price::numeric, 6)",
+            executed_sql,
+        )
+
 
 class TickerListTests(unittest.TestCase):
     def test_ticker_list_has_expected_size_and_unique_values(self):
@@ -359,7 +394,10 @@ class SaveRowsPostgresSmokeTests(unittest.TestCase):
             "user": os.getenv("PGUSER") or ingestor_prices_b3.DEFAULT_PGUSER,
             "password": os.getenv("PGPASSWORD") or "postgres",
         }
-        connection = ingestor_prices_b3.psycopg.connect(**settings)
+        try:
+            connection = ingestor_prices_b3.psycopg.connect(**settings)
+        except ingestor_prices_b3.psycopg.OperationalError as error:
+            self.skipTest(f"PostgreSQL unavailable for smoke test: {error}")
 
         try:
             with connection.cursor() as cursor:
